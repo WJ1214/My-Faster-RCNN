@@ -131,10 +131,10 @@ class ProposalTargetCreator(object):
         gt_roi_loc = ((gt_roi_loc - np.array(loc_normalize_mean, np.float32)
                        ) / np.array(loc_normalize_std, np.float32))   # 规范化
 
-        return sample_roi, gt_roi_loc, gt_roi_label
+        return sample_roi, gt_roi_loc, gt_roi_label    # 返回最后产生的正负样本，样本相对GT的偏移值，样本类别，用于最后训练
 
 
-class AnchorTargetCreator(object):     # 计算在内anchor与各GT的IOU从而得到RPN生成的ROI的标签值以及相对GT的偏移值
+class AnchorTargetCreator(object):     # 计算在内anchor与各GT的IOU从而得到RPN生成的ROI的正负样本值（0，1，-1）以及各自相对GT的偏移值
     """Assign the ground truth bounding boxes to anchors.
 
     Assigns the ground truth bounding boxes to anchors for training Region
@@ -400,19 +400,19 @@ class ProposalCreator:
         roi[:, slice(0, 4, 2)] = np.clip(
             roi[:, slice(0, 4, 2)], 0, img_size[0])
         roi[:, slice(1, 4, 2)] = np.clip(
-            roi[:, slice(1, 4, 2)], 0, img_size[1])
+            roi[:, slice(1, 4, 2)], 0, img_size[1])   # 将不在image_size（w，h）范围内的roi调整至图像内
 
         # Remove predicted boxes with either height or width < threshold.
         min_size = self.min_size * scale
         hs = roi[:, 2] - roi[:, 0]
         ws = roi[:, 3] - roi[:, 1]
-        keep = np.where((hs >= min_size) & (ws >= min_size))[0]
+        keep = np.where((hs >= min_size) & (ws >= min_size))[0]   # 仅保留大于最低要求的roi
         roi = roi[keep, :]
         score = score[keep]
 
         # Sort all (proposal, score) pairs by score from highest to lowest.
         # Take top pre_nms_topN (e.g. 6000).
-        order = score.ravel().argsort()[::-1]
+        order = score.ravel().argsort()[:: -1]
         if n_pre_nms > 0:
             order = order[:n_pre_nms]
         roi = roi[order, :]
