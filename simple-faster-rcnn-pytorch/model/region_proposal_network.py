@@ -49,9 +49,9 @@ class RegionProposalNetwork(nn.Module):
         super(RegionProposalNetwork, self).__init__()
         self.anchor_base = generate_anchor_base(
             anchor_scales=anchor_scales, ratios=ratios)
-        self.feat_stride = feat_stride
+        self.feat_stride = feat_stride                          # 在抽取特征后在原图上的步长
         self.proposal_layer = ProposalCreator(self, **proposal_creator_params)
-        n_anchor = self.anchor_base.shape[0]
+        n_anchor = self.anchor_base.shape[0]                    # 总共9类anchor的个数
         self.conv1 = nn.Conv2d(in_channels, mid_channels, 3, 1, 1)
         self.score = nn.Conv2d(mid_channels, n_anchor * 2, 1, 1, 0)
         self.loc = nn.Conv2d(mid_channels, n_anchor * 4, 1, 1, 0)
@@ -60,6 +60,7 @@ class RegionProposalNetwork(nn.Module):
         normal_init(self.loc, 0, 0.01)
 
     def forward(self, x, img_size, scale=1.):
+        # 输入的x为卷积后的特征图
         """Forward Region Proposal Network.
 
         Here are notations.
@@ -101,32 +102,32 @@ class RegionProposalNetwork(nn.Module):
         n, _, hh, ww = x.shape
         anchor = _enumerate_shifted_anchor(
             np.array(self.anchor_base),
-            self.feat_stride, hh, ww)
+            self.feat_stride, hh, ww)              # 将9种anchor撒满整个特征图
 
         n_anchor = anchor.shape[0] // (hh * ww)
-        h = F.relu(self.conv1(x))
+        h = F.relu(self.conv1(x))                  # 进一步将输入的特征图卷积
 
-        rpn_locs = self.loc(h)
+        rpn_locs = self.loc(h)                     # 预测出的每个像素点上anchor的偏移值
         # UNNOTE: check whether need contiguous
         # A: Yes
-        rpn_locs = rpn_locs.permute(0, 2, 3, 1).contiguous().view(n, -1, 4)
+        rpn_locs = rpn_locs.permute(0, 2, 3, 1).contiguous().view(n, -1, 4)     # 交换维度为（N,H,W,C)   C为anchor数*4
         rpn_scores = self.score(h)
-        rpn_scores = rpn_scores.permute(0, 2, 3, 1).contiguous()
-        rpn_softmax_scores = F.softmax(rpn_scores.view(n, hh, ww, n_anchor, 2), dim=4)
+        rpn_scores = rpn_scores.permute(0, 2, 3, 1).contiguous()                 # 交换维度为（N,H,W,C)   C为anchor*2
+        rpn_softmax_scores = F.softmax(rpn_scores.view(n, hh, ww, n_anchor, 2), dim=4)      # 在通道方向上进行softmax（前背景）
         rpn_fg_scores = rpn_softmax_scores[:, :, :, :, 1].contiguous()
         rpn_fg_scores = rpn_fg_scores.view(n, -1)
         rpn_scores = rpn_scores.view(n, -1, 2)
 
         rois = list()
         roi_indices = list()
-        for i in range(n):
+        for i in range(n):                                     # n为batch_size
             roi = self.proposal_layer(
-                rpn_locs[i].cpu().data.numpy(),
-                rpn_fg_scores[i].cpu().data.numpy(),
-                anchor, img_size,
-                scale=scale)
-            batch_index = i * np.ones((len(roi),), dtype=np.int32)
-            rois.append(roi)
+                rpn_locs[i].cpu().data.numpy(),                # 取rpn输出的第i张image的roi位置数据
+                rpn_fg_scores[i].cpu().data.numpy(),           # 取第i张image上的各个roi的前景分数
+                anchor, img_size,                              # 图像上的所有anchor和图像大小
+                scale=scale)                                   # ProposalCreater()   使用nms初步处理不符合要求的roi
+            batch_index = i * np.ones((len(roi),), dtype=np.int32)      # 给初步处理过后的roi标记
+            rois.append(roi)                                            # 将第i张image的roi添加至结果中
             roi_indices.append(batch_index)
 
         rois = np.concatenate(rois, axis=0)

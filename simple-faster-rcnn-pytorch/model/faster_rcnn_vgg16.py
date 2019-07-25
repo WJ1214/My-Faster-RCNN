@@ -19,10 +19,15 @@ def decom_vgg16():
         model = vgg16(not opt.load_path)
 
     features = list(model.features)[:30]
-    classifier = model.classifier
+    classifier = model.classifier         # vgg16的全连接层
+    '''(0)linear(in=25088,out=4096)
+     (1)relu (2)dropout 
+     (3)linear(in=4096,out=4096) (4)relu (5)dropout 
+     (6)linear(in=4096,out=1000)
+     '''
 
     classifier = list(classifier)
-    del classifier[6]
+    del classifier[6]            # 重构自己需要的vgg16结构
     if not opt.use_drop:
         del classifier[5]
         del classifier[2]
@@ -102,15 +107,15 @@ class VGG16RoIHead(nn.Module):
         # n_class includes the background
         super(VGG16RoIHead, self).__init__()
 
-        self.classifier = classifier
-        self.cls_loc = nn.Linear(4096, n_class * 4)
-        self.score = nn.Linear(4096, n_class)
+        self.classifier = classifier     # 非输出全连接层的最后一层
+        self.cls_loc = nn.Linear(4096, n_class * 4)     # 输出每个roi的所有类的偏移量（神经网络层）
+        self.score = nn.Linear(4096, n_class)           # 输出每个roi的各个类的得分（神经网络层）
 
-        normal_init(self.cls_loc, 0, 0.001)
+        normal_init(self.cls_loc, 0, 0.001)             # 对两个输出的神经网络层进行权重初始化
         normal_init(self.score, 0, 0.01)
 
         self.n_class = n_class
-        self.roi_size = roi_size
+        self.roi_size = roi_size                        # roi在pooling后的尺寸
         self.spatial_scale = spatial_scale
         self.roi = RoIPooling2D(self.roi_size, self.roi_size, self.spatial_scale)
 
@@ -137,7 +142,7 @@ class VGG16RoIHead(nn.Module):
         indices_and_rois = t.cat([roi_indices[:, None], rois], dim=1)
         # NOTE: important: yx->xy
         xy_indices_and_rois = indices_and_rois[:, [0, 2, 1, 4, 3]]
-        indices_and_rois =  xy_indices_and_rois.contiguous()
+        indices_and_rois = xy_indices_and_rois.contiguous()
 
         pool = self.roi(x, indices_and_rois)
         pool = pool.view(pool.size(0), -1)

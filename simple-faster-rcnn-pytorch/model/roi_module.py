@@ -36,11 +36,11 @@ class RoI(Function):
         # NOTE: MAKE SURE input is contiguous too
         x = x.contiguous()
         rois = rois.contiguous()
-        self.in_size = B, C, H, W = x.size()
+        self.in_size = B, C, H, W = x.size()            # batch,chanel,height,width
         self.N = N = rois.size(0)
-        output = t.zeros(N, C, self.outh, self.outw).cuda()
+        output = t.zeros(N, C, self.outh, self.outw).cuda()           # 初始化
         self.argmax_data = t.zeros(N, C, self.outh, self.outw).int().cuda()
-        self.rois = rois
+        self.rois = rois                                 # 输入的roi为roi的image索引值和roi四维数据
         args = [x.data_ptr(), rois.data_ptr(),
                 output.data_ptr(),
                 self.argmax_data.data_ptr(),

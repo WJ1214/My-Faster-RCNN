@@ -77,17 +77,17 @@ def _non_maximum_suppression_gpu(bbox, thresh, score=None, limit=None):
     n_bbox = bbox.shape[0]
 
     if score is not None:
-        order = score.argsort()[::-1].astype(np.int32)
+        order = score.argsort()[::-1].astype(np.int32)    # 按bbox在该类的分数大小对分数排序，返回索引
     else:
-        order = cp.arange(n_bbox, dtype=np.int32)
+        order = cp.arange(n_bbox, dtype=np.int32)         # 若没有分数输入，则按照顺序
 
     sorted_bbox = bbox[order, :]
     selec, n_selec = _call_nms_kernel(
-        sorted_bbox, thresh)
+        sorted_bbox, thresh)                              # 使用nms阈值对已排序的bbox抑制
     selec = selec[:n_selec]
-    selec = order[selec]
+    selec = order[selec]                                  # 取前n个所选bbox的索引
     if limit is not None:
-        selec = selec[:limit]
+        selec = selec[:limit]                             # 若有限制数，则再对所选的bbox取限制数个数bbox
     return cp.asnumpy(selec)
 
 
@@ -156,7 +156,7 @@ void nms_kernel(const int n_bbox, const float thresh,
 '''
 
 
-def _call_nms_kernel(bbox, thresh):
+def _call_nms_kernel(bbox, thresh):            # 对输入的按分数排序好的bbox进行nms
     # PyTorch does not support unsigned long Tensor.
     # Doesn't matter,since it returns ndarray finally.
     # So I'll keep it unmodified.
@@ -176,3 +176,4 @@ def _call_nms_kernel(bbox, thresh):
     selection, n_selec = _nms_gpu_post(
         mask_host, n_bbox, threads_per_block, col_blocks)
     return selection, n_selec
+# 返回在已排序好的bbox中选择出的结果bbox的索引值

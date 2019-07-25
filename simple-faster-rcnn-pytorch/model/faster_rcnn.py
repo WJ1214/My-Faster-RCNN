@@ -19,6 +19,7 @@ def nograd(f):
            return f(*args,**kwargs)
     return new_f
 
+
 class FasterRCNN(nn.Module):
     """Base class for Faster R-CNN.
 
@@ -131,7 +132,7 @@ class FasterRCNN(nn.Module):
             self.rpn(h, img_size, scale)
         roi_cls_locs, roi_scores = self.head(
             h, rois, roi_indices)
-        return roi_cls_locs, roi_scores, rois, roi_indices
+        return roi_cls_locs, roi_scores, rois, roi_indices  # roi_scores为roi的各类分数
 
     def use_preset(self, preset):
         """Use the given preset during prediction.
@@ -160,28 +161,28 @@ class FasterRCNN(nn.Module):
         else:
             raise ValueError('preset must be visualize or evaluate')
 
-    def _suppress(self, raw_cls_bbox, raw_prob):
+    def _suppress(self, raw_cls_bbox, raw_prob):   # 输入每个roi对应每个类的bbox以及每个roi的各类分数的softmax
         bbox = list()
         label = list()
         score = list()
         # skip cls_id = 0 because it is the background class
         for l in range(1, self.n_class):
-            cls_bbox_l = raw_cls_bbox.reshape((-1, self.n_class, 4))[:, l, :]
-            prob_l = raw_prob[:, l]
-            mask = prob_l > self.score_thresh
-            cls_bbox_l = cls_bbox_l[mask]
+            cls_bbox_l = raw_cls_bbox.reshape((-1, self.n_class, 4))[:, l, :]   # 取每个roi第L类的bbox（20）
+            prob_l = raw_prob[:, l]    # 取第L类的概率值
+            mask = prob_l > self.score_thresh      # 返回bool值
+            cls_bbox_l = cls_bbox_l[mask]          # 返回prob_l大于阈值的元素
             prob_l = prob_l[mask]
             keep = non_maximum_suppression(
-                cp.array(cls_bbox_l), self.nms_thresh, prob_l)
+                cp.array(cls_bbox_l), self.nms_thresh, prob_l)    # 调用NMS，返回保留的bbox的索引
             keep = cp.asnumpy(keep)
             bbox.append(cls_bbox_l[keep])
             # The labels are in [0, self.n_class - 2].
-            label.append((l - 1) * np.ones((len(keep),)))
-            score.append(prob_l[keep])
+            label.append((l - 1) * np.ones((len(keep),)))       # 将保留下的bbox的所有L类bbox的标签标记为L-1
+            score.append(prob_l[keep])                          # 将所有roi剩余的第L类分数保存
         bbox = np.concatenate(bbox, axis=0).astype(np.float32)
         label = np.concatenate(label, axis=0).astype(np.int32)
         score = np.concatenate(score, axis=0).astype(np.float32)
-        return bbox, label, score
+        return bbox, label, score                               # 每行为第L类的所有bbox，一共L行
 
     @nograd
     def predict(self, imgs,sizes=None,visualize=False):
@@ -230,7 +231,7 @@ class FasterRCNN(nn.Module):
         for img, size in zip(prepared_imgs, sizes):
             img = at.totensor(img[None]).float()
             scale = img.shape[3] / size[1]
-            roi_cls_loc, roi_scores, rois, _ = self(img, scale=scale)
+            roi_cls_loc, roi_scores, rois, _ = self.forward(img, scale=scale)
             # We are assuming that batch size is 1.
             roi_score = roi_scores.data
             roi_cls_loc = roi_cls_loc.data
@@ -249,17 +250,17 @@ class FasterRCNN(nn.Module):
             cls_bbox = loc2bbox(at.tonumpy(roi).reshape((-1, 4)),
                                 at.tonumpy(roi_cls_loc).reshape((-1, 4)))
             cls_bbox = at.totensor(cls_bbox)
-            cls_bbox = cls_bbox.view(-1, self.n_class * 4)
+            cls_bbox = cls_bbox.view(-1, self.n_class * 4)    # 每个bbox对每一个目标类产生一个相应结果
             # clip bounding box
-            cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=size[0])
+            cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=size[0])  # 将顶点在图像外的bbox调整至图像内
             cls_bbox[:, 1::2] = (cls_bbox[:, 1::2]).clamp(min=0, max=size[1])
 
-            prob = at.tonumpy(F.softmax(at.totensor(roi_score), dim=1))
+            prob = at.tonumpy(F.softmax(at.totensor(roi_score), dim=1))  # 每个roi的各类分数的softmax值，每个roi只生成20个分数每个分数对应一个bbox
 
             raw_cls_bbox = at.tonumpy(cls_bbox)
             raw_prob = at.tonumpy(prob)
 
-            bbox, label, score = self._suppress(raw_cls_bbox, raw_prob)
+            bbox, label, score = self._suppress(raw_cls_bbox, raw_prob)   # 对产生的所有bbox和相应分数进行NMS
             bboxes.append(bbox)
             labels.append(label)
             scores.append(score)
@@ -278,16 +279,16 @@ class FasterRCNN(nn.Module):
         for key, value in dict(self.named_parameters()).items():
             if value.requires_grad:
                 if 'bias' in key:
-                    params += [{'params': [value], 'lr': lr * 2, 'weight_decay': 0}]
+                    params += [{'params': [value], 'lr': lr * 2, 'weight_decay': 0}]     # 如果是bias则加快学习，不进行权重衰减
                 else:
                     params += [{'params': [value], 'lr': lr, 'weight_decay': opt.weight_decay}]
-        if opt.use_adam:
+        if opt.use_adam:                                        # 如果是weight则按照lr去学习，同时进行权重衰减
             self.optimizer = t.optim.Adam(params)
         else:
             self.optimizer = t.optim.SGD(params, momentum=0.9)
         return self.optimizer
 
-    def scale_lr(self, decay=0.1):
+    def scale_lr(self, decay=0.1):                            # 控制学习率
         for param_group in self.optimizer.param_groups:
             param_group['lr'] *= decay
         return self.optimizer
