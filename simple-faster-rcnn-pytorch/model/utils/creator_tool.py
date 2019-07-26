@@ -5,7 +5,7 @@ from model.utils.bbox_tools import bbox2loc, bbox_iou, loc2bbox
 from model.utils.nms import non_maximum_suppression
 
 
-class ProposalTargetCreator(object):          # 结果用来训练RPN
+class ProposalTargetCreator(object):          # 结果用来训练ROIhead
     """Assign ground truth bounding boxes to given RoIs.
 
     The :meth:`__call__` of this class generates training targets
@@ -134,7 +134,7 @@ class ProposalTargetCreator(object):          # 结果用来训练RPN
         return sample_roi, gt_roi_loc, gt_roi_label    # 返回最后产生的正负样本，样本相对GT的偏移值，样本类别，用于最后训练
 
 
-class AnchorTargetCreator(object):     # 计算在内anchor与各GT的IOU从而得到RPN生成的ROI的前背景值（0，1，-1）以及各自相对GT的偏移值
+class AnchorTargetCreator(object):     # 计算在内anchor与各GT的IOU从而得到RPN生成的ROI的前背景值（0，1，-1）以及各自相对GT的偏移值（用来训练RPN）
     """Assign the ground truth bounding boxes to anchors.
 
     Assigns the ground truth bounding boxes to anchors for training Region
